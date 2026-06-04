@@ -67,7 +67,7 @@ class MobileHandler(BaseHTTPRequestHandler):
         token = clean_token(params.get("token", [""])[0]) or SERVER_TOKEN
         target_date = params.get("date", [""])[0] or None
         days = int(params.get("days", ["45"])[0])
-        branch_limit = int(params.get("branch_limit", ["120"])[0])
+        branch_limit = int(params.get("branch_limit", ["80"])[0])
         if not token:
             self._send_json(400, {"error": "請先輸入 FinMind token。"})
             return
