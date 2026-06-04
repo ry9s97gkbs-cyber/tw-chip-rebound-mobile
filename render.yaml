@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: tw-chip-rebound
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -B -m tw_chip_rebound.mobile_server --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/ping
+    autoDeploy: true
+    envVars:
+      - key: FINMIND_TOKEN
+        sync: false

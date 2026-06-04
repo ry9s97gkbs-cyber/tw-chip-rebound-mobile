@@ -1,0 +1,9 @@
+.DS_Store
+.env
+.venv/
+__pycache__/
+*.pyc
+.pycache/
+work/
+outputs/example_result*.csv
+outputs/*.command

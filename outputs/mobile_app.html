@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="籌碼反彈">
+  <title>價弱籌碼強</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7f8;
+      --panel: #ffffff;
+      --ink: #18202a;
+      --muted: #66717f;
+      --line: #d9e0e6;
+      --accent: #0a7568;
+      --accent-2: #114d68;
+      --warn: #b45b00;
+      --danger: #a3273c;
+      --soft: #e8f3f1;
+      --shadow: 0 8px 24px rgba(24, 32, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header {
+      padding: max(14px, env(safe-area-inset-top)) 16px 12px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    .sub {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 12px 12px 92px;
+    }
+    .panel {
+      margin-bottom: 12px;
+      padding: 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 11px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .token-actions {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      margin: -4px 0 10px;
+    }
+    .token-actions span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .tiny-btn {
+      min-height: 34px;
+      padding: 0 12px;
+      color: var(--accent);
+      background: var(--soft);
+      font-size: 13px;
+      font-weight: 800;
+    }
+    input, select {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 11px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      background: #fff;
+      font-size: 16px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .status {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+    .metric {
+      min-height: 66px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+    .metric b {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 18px;
+      color: var(--ink);
+    }
+    .metric span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .msg {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .msg.error { color: var(--danger); }
+    .funnel {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .step {
+      display: grid;
+      grid-template-columns: 92px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .bar {
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e8edf2;
+    }
+    .bar i {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: var(--accent);
+    }
+    .cards {
+      display: grid;
+      gap: 10px;
+    }
+    .stock-card {
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .stock-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .name {
+      min-width: 0;
+    }
+    .name b {
+      display: block;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+    .name span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .tag {
+      flex: 0 0 auto;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: #eef2f5;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .tag.strong { color: var(--warn); background: #fff1df; }
+    .tag.entry { color: var(--accent); background: var(--soft); }
+    .score {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+      margin-bottom: 10px;
+    }
+    .score b { font-size: 28px; color: var(--accent-2); }
+    .score span { color: var(--muted); font-size: 12px; }
+    .facts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .fact {
+      min-width: 0;
+      padding: 8px;
+      border-radius: 8px;
+      background: #f7f9fa;
+    }
+    .fact span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .fact b {
+      display: block;
+      overflow: hidden;
+      margin-top: 2px;
+      font-size: 15px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .empty {
+      padding: 28px 12px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .table-wrap {
+      display: none;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    table {
+      width: 100%;
+      min-width: 1120px;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 9px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      white-space: nowrap;
+    }
+    th:first-child, td:first-child,
+    th:nth-child(2), td:nth-child(2),
+    th:last-child, td:last-child { text-align: left; }
+    th { background: #eef3f5; }
+    .bottom-bar {
+      position: fixed;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      z-index: 4;
+      padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+      background: rgba(255, 255, 255, 0.94);
+      border-top: 1px solid var(--line);
+      backdrop-filter: blur(16px);
+    }
+    .bottom-inner {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+    button {
+      min-height: 48px;
+      border: 0;
+      border-radius: 8px;
+      color: #fff;
+      background: var(--accent);
+      font-size: 16px;
+      font-weight: 800;
+    }
+    button.secondary {
+      color: var(--accent);
+      background: var(--soft);
+    }
+    button:disabled {
+      color: #8a94a0;
+      background: #e5e9ee;
+    }
+    @media (min-width: 820px) {
+      main { padding-bottom: 104px; }
+      .layout { display: grid; grid-template-columns: 360px 1fr; gap: 12px; align-items: start; }
+      .status { grid-template-columns: repeat(4, 1fr); }
+      .cards { display: none; }
+      .table-wrap { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>價弱籌碼強</h1>
+    <div class="sub">FinMind 自動抓價量、法人籌碼與候選股分點</div>
+  </header>
+
+  <main>
+    <div class="layout">
+      <section class="panel">
+        <h2>設定</h2>
+        <div id="tokenBox">
+        <label>FinMind Token
+          <input id="token" type="password" inputmode="text" autocomplete="off" placeholder="貼上 token，會存在本機瀏覽器">
+        </label>
+        <div class="token-actions">
+          <span id="tokenState">尚未儲存 token</span>
+          <button id="clearTokenBtn" class="tiny-btn" type="button">清除</button>
+        </div>
+        </div>
+        <div class="row">
+          <label>日期
+            <input id="date" type="date">
+          </label>
+          <label>分點候選
+            <select id="branchLimit">
+              <option value="80" selected>80 檔</option>
+              <option value="120">120 檔</option>
+              <option value="180">180 檔</option>
+            </select>
+          </label>
+        </div>
+        <div class="msg" id="hint">日期空白會使用資料中的最新交易日。</div>
+      </section>
+
+      <section class="panel">
+        <h2>資料狀態</h2>
+        <div class="status">
+          <div class="metric"><b id="mDate">-</b><span>選股日期</span></div>
+          <div class="metric"><b id="mRows">0</b><span>結果檔數</span></div>
+          <div class="metric"><b id="mPrice">0</b><span>價量列數</span></div>
+          <div class="metric"><b id="mBranch">0</b><span>分點候選</span></div>
+        </div>
+        <div class="msg" id="message">準備就緒。</div>
+        <div id="funnel" class="funnel"></div>
+      </section>
+    </div>
+
+    <section>
+      <div id="cards" class="cards"><div class="empty">尚未掃描</div></div>
+      <div id="table" class="table-wrap"><div class="empty">尚未掃描</div></div>
+    </section>
+  </main>
+
+  <div class="bottom-bar">
+    <div class="bottom-inner">
+      <button id="scanBtn">更新掃描</button>
+      <button id="downloadBtn" class="secondary" disabled>下載 CSV</button>
+    </div>
+  </div>
+
+  <script>
+    const cols = [
+      "股票代號", "股票名稱", "收盤價", "今日漲跌幅", "最高價", "成交量", "主力買賣超",
+      "主力買超佔成交量比例", "家數差", "5日集中度", "20日集中度", "買方Top15均價",
+      "收盤價與主力均價差距", "分數", "訊號分類"
+    ];
+    let rows = [];
+    let hasServerToken = false;
+
+    const tokenInput = document.getElementById("token");
+    function cleanToken(value) {
+      return String(value || "")
+        .trim()
+        .replace(/^Bearer\s+/i, "")
+        .replace(/[\s\u200b\u200c\u200d\ufeff]/g, "");
+    }
+    function updateTokenState() {
+      const token = cleanToken(tokenInput.value);
+      document.getElementById("tokenState").textContent = token ? `已儲存 token，長度 ${token.length}` : "尚未儲存 token";
+    }
+    tokenInput.value = localStorage.getItem("finmindToken") || "";
+    updateTokenState();
+    tokenInput.addEventListener("input", () => {
+      const token = cleanToken(tokenInput.value);
+      localStorage.setItem("finmindToken", token);
+      updateTokenState();
+    });
+    document.getElementById("clearTokenBtn").addEventListener("click", () => {
+      tokenInput.value = "";
+      localStorage.removeItem("finmindToken");
+      updateTokenState();
+      setMessage("Token 已清除，請重新貼上 FinMind token。");
+    });
+
+    async function loadConfig() {
+      try {
+        const resp = await fetch("/api/config", { cache: "no-store" });
+        const config = await resp.json();
+        hasServerToken = Boolean(config.has_server_token);
+        if (hasServerToken) {
+          document.getElementById("tokenBox").style.display = "none";
+          setMessage("雲端已設定 FinMind token，可直接掃描。");
+        }
+      } catch (_) {
+        hasServerToken = false;
+      }
+    }
+
+    function setMessage(text, error = false) {
+      const el = document.getElementById("message");
+      el.textContent = text;
+      el.className = `msg${error ? " error" : ""}`;
+    }
+
+    function formatPct(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? `${n.toFixed(2)}%` : "-";
+    }
+
+    function renderCards(data) {
+      const target = document.getElementById("cards");
+      if (!data.length) {
+        target.innerHTML = '<div class="empty">沒有符合條件的股票</div>';
+        return;
+      }
+      target.innerHTML = data.map(row => {
+        const signal = row["訊號分類"];
+        const tagClass = signal === "可進場" ? "entry" : signal === "強觀察" ? "strong" : "";
+        return `
+          <article class="stock-card">
+            <div class="stock-top">
+              <div class="name"><b>${row["股票名稱"] || row["股票代號"]}</b><span>${row["股票代號"]}</span></div>
+              <div class="tag ${tagClass}">${signal}</div>
+            </div>
+            <div class="score"><b>${row["分數"]}</b><span>/ 100</span></div>
+            <div class="facts">
+              <div class="fact"><span>收盤 / 漲跌</span><b>${row["收盤價"]} / ${formatPct(row["今日漲跌幅"])}</b></div>
+              <div class="fact"><span>成交量</span><b>${row["成交量"]}</b></div>
+              <div class="fact"><span>主力買超</span><b>${row["主力買賣超"]}</b></div>
+              <div class="fact"><span>買超佔比</span><b>${formatPct(Number(row["主力買超佔成交量比例"]) * 100)}</b></div>
+              <div class="fact"><span>家數差</span><b>${row["家數差"]}</b></div>
+              <div class="fact"><span>Top15 均價</span><b>${row["買方Top15均價"]}</b></div>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderTable(data) {
+      const target = document.getElementById("table");
+      if (!data.length) {
+        target.innerHTML = '<div class="empty">沒有符合條件的股票</div>';
+        return;
+      }
+      const head = cols.map(col => `<th>${col}</th>`).join("");
+      const body = data.map(row => `<tr>${cols.map(col => `<td>${row[col] ?? ""}</td>`).join("")}</tr>`).join("");
+      target.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+
+    function updateMeta(meta, count) {
+      document.getElementById("mDate").textContent = meta?.target_date || "-";
+      document.getElementById("mRows").textContent = count;
+      document.getElementById("mPrice").textContent = meta?.price_rows || 0;
+      document.getElementById("mBranch").textContent = meta?.branch_candidates || 0;
+      renderFunnel(meta?.diagnostics);
+    }
+
+    function renderFunnel(diagnostics) {
+      const target = document.getElementById("funnel");
+      if (!diagnostics) {
+        target.innerHTML = "";
+        return;
+      }
+      const steps = [
+        ["全市場", "target_total"],
+        ["排除後", "not_excluded"],
+        ["價弱", "price_weak"],
+        ["買超千張", "main_buy_1000"],
+        ["佔比5%", "main_ratio_5"],
+        ["集中轉強", "concentration_stronger"],
+        ["家數集中", "count_diff_negative"],
+        ["分數>60", "score_over_60"]
+      ];
+      const base = Math.max(1, Number(diagnostics.target_total || 0));
+      target.innerHTML = steps.map(([label, key]) => {
+        const value = Number(diagnostics[key] || 0);
+        const width = Math.max(0, Math.min(100, (value / base) * 100));
+        return `<div class="step"><span>${label}</span><div class="bar"><i style="width:${width}%"></i></div><b>${value}</b></div>`;
+      }).join("");
+    }
+
+    function toCsv(data) {
+      const escapeCell = value => {
+        const text = String(value ?? "");
+        return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+      };
+      return "\uFEFF" + [cols.join(","), ...data.map(row => cols.map(col => escapeCell(row[col])).join(","))].join("\n");
+    }
+
+    async function scan() {
+      const token = cleanToken(tokenInput.value);
+      if (!token && !hasServerToken) {
+        setMessage("請先輸入 FinMind token。", true);
+        return;
+      }
+      tokenInput.value = token;
+      localStorage.setItem("finmindToken", token);
+      updateTokenState();
+      const date = document.getElementById("date").value;
+      const branchLimit = Number(document.getElementById("branchLimit").value);
+      const btn = document.getElementById("scanBtn");
+      const download = document.getElementById("downloadBtn");
+      btn.disabled = true;
+      download.disabled = true;
+      setMessage("抓取公開資料中。會先抓價量與法人籌碼，再平行抓候選股分點...");
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 180000);
+        const resp = await fetch("/api/screen", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: hasServerToken ? "" : token, date, branch_limit: branchLimit, days: 45 }),
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        const payload = await resp.json();
+        if (!resp.ok) throw new Error(payload.error || "掃描失敗");
+        rows = payload.rows || [];
+        renderCards(rows);
+        renderTable(rows);
+        updateMeta(payload.meta, rows.length);
+        download.disabled = !rows.length;
+        const errors = payload.meta?.branch_errors?.length ? ` 分點錯誤 ${payload.meta.branch_errors.length} 筆。` : "";
+        setMessage(`完成，共 ${rows.length} 檔。${errors}`);
+      } catch (err) {
+        rows = [];
+        renderCards(rows);
+        renderTable(rows);
+        updateMeta(null, 0);
+        const text = err.name === "AbortError"
+          ? "掃描超過 3 分鐘，請先把分點候選改 80 檔再試。"
+          : (err.message === "Load failed"
+            ? "手機與伺服器連線中斷。請確認此頁網址仍是 192.168.1.111:8787，或重新整理後再按一次。"
+            : (err.message || String(err)));
+        setMessage(text, true);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById("scanBtn").addEventListener("click", scan);
+    document.getElementById("downloadBtn").addEventListener("click", () => {
+      const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "price_weak_chip_strong.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+    loadConfig();
+  </script>
+</body>
+</html>

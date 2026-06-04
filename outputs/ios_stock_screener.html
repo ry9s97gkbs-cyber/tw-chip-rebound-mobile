@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="籌碼選股">
+  <title>價弱籌碼強選股</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #18202a;
+      --muted: #6a7481;
+      --line: #d8dee7;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --accent: #136f63;
+      --warn: #a94d00;
+      --bad: #a22335;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      padding: 16px;
+      padding-top: max(16px, env(safe-area-inset-top));
+      background: rgba(255, 255, 255, 0.94);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(14px);
+    }
+    h1 {
+      margin: 0;
+      font-size: 21px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 14px;
+      padding-bottom: max(24px, env(safe-area-inset-bottom));
+    }
+    section {
+      margin: 12px 0;
+      padding: 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+    label {
+      display: grid;
+      gap: 6px;
+      margin: 10px 0;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    input[type="file"], input[type="date"] {
+      width: 100%;
+      min-height: 44px;
+      padding: 9px 10px;
+      color: var(--ink);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 16px;
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    button {
+      min-height: 46px;
+      border: 0;
+      border-radius: 8px;
+      color: #fff;
+      background: var(--accent);
+      font-size: 16px;
+      font-weight: 700;
+    }
+    button.secondary {
+      color: var(--accent);
+      background: #e5f2ef;
+    }
+    button:disabled {
+      color: #87909b;
+      background: #e5e8ed;
+    }
+    .status {
+      min-height: 24px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1120px;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 9px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      white-space: nowrap;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: #eef3f5;
+      color: #34404d;
+      font-weight: 700;
+    }
+    th:first-child, td:first-child,
+    th:nth-child(2), td:nth-child(2),
+    th:last-child, td:last-child {
+      text-align: left;
+    }
+    .tag {
+      display: inline-block;
+      padding: 3px 7px;
+      border-radius: 999px;
+      font-weight: 700;
+      background: #eef3f5;
+    }
+    .tag-strong { color: var(--warn); background: #fff0df; }
+    .tag-entry { color: var(--accent); background: #e2f5ef; }
+    .empty {
+      padding: 22px 12px;
+      color: var(--muted);
+      text-align: center;
+    }
+    @media (min-width: 720px) {
+      .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+      .controls { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>價弱籌碼強選股</h1>
+  </header>
+  <main>
+    <section>
+      <h2>資料</h2>
+      <div class="grid">
+        <label>日 K CSV
+          <input id="dailyFile" type="file" accept=".csv,text/csv">
+        </label>
+        <label>主力買賣超 CSV
+          <input id="mainFile" type="file" accept=".csv,text/csv">
+        </label>
+        <label>分點 Top15 CSV
+          <input id="branchFile" type="file" accept=".csv,text/csv">
+        </label>
+        <label>集保戶數 CSV
+          <input id="custodyFile" type="file" accept=".csv,text/csv">
+        </label>
+      </div>
+      <label>選股日期
+        <input id="targetDate" type="date">
+      </label>
+      <div class="controls">
+        <button id="runBtn">開始選股</button>
+        <button id="downloadBtn" class="secondary" disabled>下載 CSV</button>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+
+    <section>
+      <h2>結果</h2>
+      <div id="resultWrap" class="table-wrap">
+        <div class="empty">尚未執行</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const outputColumns = [
+      "股票代號", "股票名稱", "收盤價", "今日漲跌幅", "最高價", "成交量", "主力買賣超",
+      "主力買超佔成交量比例", "家數差", "5日集中度", "20日集中度", "買方Top15均價",
+      "收盤價與主力均價差距", "分數", "訊號分類"
+    ];
+
+    const aliases = {
+      date: ["date", "日期"],
+      stock_id: ["stock_id", "symbol", "code", "股票代號", "證券代號"],
+      stock_name: ["stock_name", "name", "股票名稱", "證券名稱"],
+      open: ["open", "開盤價", "開盤"],
+      high: ["high", "最高價", "最高"],
+      low: ["low", "最低價", "最低"],
+      close: ["close", "收盤價", "收盤"],
+      volume: ["volume", "成交量", "成交股數", "成交張數"],
+      avg_price: ["avg_price", "均價", "今日均價"],
+      main_buy_sell: ["main_buy_sell", "主力買賣超", "主力買賣超張數", "主力買超"],
+      buyer_count: ["buyer_count", "買進家數", "買方家數"],
+      seller_count: ["seller_count", "賣出家數", "賣方家數"],
+      count_diff: ["count_diff", "家數差"],
+      concentration_5d: ["concentration_5d", "5日集中度", "五日集中度"],
+      concentration_20d: ["concentration_20d", "20日集中度", "二十日集中度"],
+      top15_avg_price: ["top15_avg_price", "買方Top15均價", "買方TOP15均價"],
+      top15_brokers: ["top15_brokers", "買方Top15分點", "買方TOP15分點", "買方分點"],
+      holder_count: ["holder_count", "集保戶數", "持股人數"]
+    };
+
+    const config = {
+      minVolume: 3000,
+      minPrice: 20,
+      minMainBuy: 1000,
+      minMainVolumeRatio: 0.05,
+      maxGainForPriceWeak: 7,
+      maxGainForIntradaySpike: 3,
+      intradaySpikePct: 7,
+      longUpperShadowRatio: 0.04,
+      nearLowRatio: 0.02,
+      limitDownPct: -9.5,
+      maxCloseAboveMainCostPct: 0.08
+    };
+
+    let lastOutput = [];
+
+    function parseCsv(text) {
+      const rows = [];
+      let row = [];
+      let value = "";
+      let quoted = false;
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const next = text[i + 1];
+        if (char === '"' && quoted && next === '"') {
+          value += '"';
+          i++;
+        } else if (char === '"') {
+          quoted = !quoted;
+        } else if (char === "," && !quoted) {
+          row.push(value.trim());
+          value = "";
+        } else if ((char === "\n" || char === "\r") && !quoted) {
+          if (char === "\r" && next === "\n") i++;
+          row.push(value.trim());
+          if (row.some(cell => cell !== "")) rows.push(row);
+          row = [];
+          value = "";
+        } else {
+          value += char;
+        }
+      }
+      row.push(value.trim());
+      if (row.some(cell => cell !== "")) rows.push(row);
+      return rows;
+    }
+
+    function normalizeRows(rows, required) {
+      if (!rows.length) return [];
+      const header = rows[0].map(name => name.replace(/^\uFEFF/, ""));
+      const index = {};
+      Object.entries(aliases).forEach(([standard, names]) => {
+        const found = names.find(name => header.includes(name));
+        if (found) index[standard] = header.indexOf(found);
+      });
+      const missing = required.filter(name => index[name] === undefined);
+      if (missing.length) throw new Error(`缺少欄位：${missing.join(", ")}`);
+      return rows.slice(1).map(cells => {
+        const item = {};
+        Object.entries(index).forEach(([standard, idx]) => {
+          const raw = cells[idx] ?? "";
+          if (["date", "stock_id", "stock_name", "top15_brokers"].includes(standard)) {
+            item[standard] = String(raw).trim();
+          } else {
+            const num = Number(String(raw).replaceAll(",", ""));
+            item[standard] = Number.isFinite(num) ? num : NaN;
+          }
+        });
+        return item;
+      }).filter(item => item.date && item.stock_id);
+    }
+
+    async function readFile(input, required, optional = false) {
+      const file = input.files[0];
+      if (!file) {
+        if (optional) return [];
+        throw new Error("請選擇必要 CSV 檔");
+      }
+      const text = await file.text();
+      return normalizeRows(parseCsv(text), required);
+    }
+
+    function keyOf(row) {
+      return `${row.date}|${row.stock_id}`;
+    }
+
+    function rollingAverage(values, index, length) {
+      if (index + 1 < length) return NaN;
+      let sum = 0;
+      for (let i = index - length + 1; i <= index; i++) sum += values[i];
+      return sum / length;
+    }
+
+    function buildDataset(daily, mainRows, branchRows, custodyRows) {
+      const mainMap = new Map(mainRows.map(row => {
+        if (!Number.isFinite(row.count_diff) && Number.isFinite(row.buyer_count) && Number.isFinite(row.seller_count)) {
+          row.count_diff = row.buyer_count - row.seller_count;
+        }
+        return [keyOf(row), row];
+      }));
+      const branchMap = new Map(branchRows.map(row => [keyOf(row), row]));
+      const custodyMap = new Map(custodyRows.map(row => [keyOf(row), row]));
+      const byStock = new Map();
+      daily.forEach(row => {
+        if (!byStock.has(row.stock_id)) byStock.set(row.stock_id, []);
+        byStock.get(row.stock_id).push(row);
+      });
+
+      const dataset = [];
+      byStock.forEach(rows => {
+        rows.sort((a, b) => a.date.localeCompare(b.date));
+        const closes = rows.map(row => row.close);
+        const volumes = rows.map(row => row.volume);
+        const holderRows = rows.map(row => custodyMap.get(keyOf(row))?.holder_count ?? NaN);
+
+        rows.forEach((row, i) => {
+          const merged = {
+            ...row,
+            ...(mainMap.get(keyOf(row)) || {}),
+            ...(branchMap.get(keyOf(row)) || {}),
+            holder_count: holderRows[i],
+            prev_holder_count: i > 0 ? holderRows[i - 1] : NaN
+          };
+          const prevClose = i > 0 ? closes[i - 1] : NaN;
+          merged.prev_close = prevClose;
+          merged.pct_change = Number.isFinite(prevClose) ? (merged.close / prevClose - 1) * 100 : NaN;
+          merged.intraday_high_pct = Number.isFinite(prevClose) ? (merged.high / prevClose - 1) * 100 : NaN;
+          merged.ma2 = rollingAverage(closes, i, 2);
+          merged.ma5 = rollingAverage(closes, i, 5);
+          merged.ma20_volume = rollingAverage(volumes, i, 20);
+          merged.today_mid_price = (merged.high + merged.low) / 2;
+          merged.next_close = i + 1 < rows.length ? closes[i + 1] : NaN;
+          merged.avg_price = Number.isFinite(merged.avg_price)
+            ? merged.avg_price
+            : (merged.open + merged.high + merged.low + merged.close) / 4;
+          merged.main_volume_ratio = merged.main_buy_sell / merged.volume;
+          merged.main_cost_gap = (merged.top15_avg_price - merged.close) / merged.close;
+          merged.close_above_main_cost_pct = (merged.close - merged.top15_avg_price) / merged.top15_avg_price;
+          merged.prev_concentration_5d = i > 0
+            ? (mainMap.get(keyOf(rows[i - 1]))?.concentration_5d ?? NaN)
+            : NaN;
+          let mainBuy3d = 0;
+          for (let j = Math.max(0, i - 2); j <= i; j++) {
+            const item = mainMap.get(keyOf(rows[j]));
+            if (item && item.main_buy_sell > 0) mainBuy3d++;
+          }
+          merged.main_buy_3d_count = i >= 2 ? mainBuy3d : NaN;
+          dataset.push(merged);
+        });
+      });
+      return dataset;
+    }
+
+    function priceWeak(row) {
+      return {
+        close_below_avg: row.close < row.avg_price,
+        close_near_low: (row.close - row.low) / row.close <= config.nearLowRatio,
+        black_k: row.close < row.open,
+        long_upper_shadow: (row.high - row.close) / row.close >= config.longUpperShadowRatio,
+        intraday_spike_faded: row.pct_change < config.maxGainForIntradaySpike
+          && row.intraday_high_pct >= config.intradaySpikePct,
+        break_short_ma: row.close < row.ma2 || row.close < row.ma5
+      };
+    }
+
+    function chipStrong(row) {
+      const concentrationStronger = Number.isFinite(row.concentration_5d)
+        && Number.isFinite(row.prev_concentration_5d)
+        && ((row.prev_concentration_5d < 0 && row.concentration_5d >= 0)
+          || row.concentration_5d > row.prev_concentration_5d);
+      return {
+        main_buy_positive: row.main_buy_sell > 0,
+        main_buy_over_1000: row.main_buy_sell >= config.minMainBuy,
+        main_buy_ratio_over_5: row.main_volume_ratio >= config.minMainVolumeRatio,
+        count_diff_negative: row.count_diff < 0,
+        concentration_5d_stronger: concentrationStronger
+      };
+    }
+
+    function isExcluded(row) {
+      const costTooFar = Number.isFinite(row.close_above_main_cost_pct)
+        && row.close_above_main_cost_pct > config.maxCloseAboveMainCostPct;
+      return row.pct_change <= config.limitDownPct
+        || row.volume < config.minVolume
+        || row.close < config.minPrice
+        || row.pct_change > config.maxGainForPriceWeak
+        || costTooFar;
+    }
+
+    function score(row) {
+      const price = priceWeak(row);
+      const chip = chipStrong(row);
+      let points = 0;
+      points += price.long_upper_shadow ? 15 : 0;
+      points += price.close_near_low ? 15 : 0;
+      points += (price.black_k || price.intraday_spike_faded) ? 10 : 0;
+      points += price.break_short_ma ? 10 : 0;
+      points += chip.main_buy_positive ? 15 : 0;
+      points += chip.main_buy_ratio_over_5 ? 10 : 0;
+      points += chip.count_diff_negative ? 10 : 0;
+      points += chip.concentration_5d_stronger ? 10 : 0;
+      points += row.top15_avg_price > row.close ? 15 : 0;
+      return Math.min(points, 100);
+    }
+
+    function classify(row, points) {
+      if (points >= 80 && Number.isFinite(row.next_close) && row.next_close >= row.today_mid_price) return "可進場";
+      if (points >= 70) return "強觀察";
+      return "觀察";
+    }
+
+    function fmt(value, digits = 2) {
+      return Number.isFinite(value) ? Number(value.toFixed(digits)) : "";
+    }
+
+    function runScreen(dataset, targetDate) {
+      const date = targetDate || dataset.map(row => row.date).sort().at(-1);
+      return dataset
+        .filter(row => row.date === date)
+        .filter(row => !isExcluded(row))
+        .filter(row => Object.values(priceWeak(row)).some(Boolean))
+        .filter(row => {
+          const chip = chipStrong(row);
+          return chip.main_buy_positive && chip.main_buy_over_1000 && chip.main_buy_ratio_over_5
+            && chip.count_diff_negative && chip.concentration_5d_stronger;
+        })
+        .map(row => {
+          const points = score(row);
+          if (points <= 60) return null;
+          return {
+            "股票代號": row.stock_id,
+            "股票名稱": row.stock_name || "",
+            "收盤價": fmt(row.close),
+            "今日漲跌幅": fmt(row.pct_change),
+            "最高價": fmt(row.high),
+            "成交量": Math.round(row.volume),
+            "主力買賣超": Math.round(row.main_buy_sell),
+            "主力買超佔成交量比例": fmt(row.main_volume_ratio, 4),
+            "家數差": Math.round(row.count_diff),
+            "5日集中度": fmt(row.concentration_5d, 4),
+            "20日集中度": fmt(row.concentration_20d, 4),
+            "買方Top15均價": fmt(row.top15_avg_price),
+            "收盤價與主力均價差距": fmt(row.main_cost_gap, 4),
+            "分數": points,
+            "訊號分類": classify(row, points)
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b["分數"] - a["分數"] || b["主力買超佔成交量比例"] - a["主力買超佔成交量比例"]);
+    }
+
+    function renderTable(rows) {
+      const wrap = document.getElementById("resultWrap");
+      if (!rows.length) {
+        wrap.innerHTML = '<div class="empty">沒有符合條件的股票</div>';
+        return;
+      }
+      const head = outputColumns.map(col => `<th>${col}</th>`).join("");
+      const body = rows.map(row => `<tr>${outputColumns.map(col => {
+        const value = row[col] ?? "";
+        if (col === "訊號分類") {
+          const cls = value === "可進場" ? "tag-entry" : value === "強觀察" ? "tag-strong" : "";
+          return `<td><span class="tag ${cls}">${value}</span></td>`;
+        }
+        return `<td>${value}</td>`;
+      }).join("")}</tr>`).join("");
+      wrap.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+
+    function toCsv(rows) {
+      const escapeCell = value => {
+        const text = String(value ?? "");
+        return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+      };
+      return "\uFEFF" + [
+        outputColumns.join(","),
+        ...rows.map(row => outputColumns.map(col => escapeCell(row[col])).join(","))
+      ].join("\n");
+    }
+
+    document.getElementById("runBtn").addEventListener("click", async () => {
+      const status = document.getElementById("status");
+      const downloadBtn = document.getElementById("downloadBtn");
+      try {
+        status.textContent = "讀取中...";
+        downloadBtn.disabled = true;
+        const daily = await readFile(document.getElementById("dailyFile"), ["date", "stock_id", "open", "high", "low", "close", "volume"]);
+        const main = await readFile(document.getElementById("mainFile"), ["date", "stock_id", "main_buy_sell"]);
+        const branch = await readFile(document.getElementById("branchFile"), ["date", "stock_id"], true);
+        const custody = await readFile(document.getElementById("custodyFile"), ["date", "stock_id", "holder_count"], true);
+        const dataset = buildDataset(daily, main, branch, custody);
+        lastOutput = runScreen(dataset, document.getElementById("targetDate").value);
+        renderTable(lastOutput);
+        downloadBtn.disabled = !lastOutput.length;
+        status.textContent = `完成，共 ${lastOutput.length} 檔。`;
+      } catch (error) {
+        lastOutput = [];
+        renderTable([]);
+        status.textContent = error.message || String(error);
+      }
+    });
+
+    document.getElementById("downloadBtn").addEventListener("click", () => {
+      const blob = new Blob([toCsv(lastOutput)], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "price_weak_chip_strong.csv";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    });
+  </script>
+</body>
+</html>
