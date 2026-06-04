@@ -21,22 +21,32 @@ SERVER_TOKEN = clean_token(os.environ.get("FINMIND_TOKEN", ""))
 
 
 class MobileHandler(BaseHTTPRequestHandler):
+    def _send_headers(self, status: int, content_type: str, length: int = 0) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-store, max-age=0")
+        self.send_header("Content-Length", str(length))
+        self.end_headers()
+
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
+        self._send_headers(status, "application/json; charset=utf-8", len(body))
         self.wfile.write(body)
 
     def _send_html(self) -> None:
         body = APP_HTML.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Cache-Control", "no-store, max-age=0")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
+        self._send_headers(200, "text/html; charset=utf-8", len(body))
         self.wfile.write(body)
+
+    def do_HEAD(self) -> None:  # noqa: N802 - stdlib handler name.
+        parsed = urlparse(self.path)
+        if parsed.path in ("/", "/app"):
+            self._send_headers(200, "text/html; charset=utf-8", APP_HTML.stat().st_size)
+            return
+        if parsed.path in ("/api/ping", "/api/config"):
+            self._send_headers(200, "application/json; charset=utf-8", 0)
+            return
+        self._send_headers(404, "application/json; charset=utf-8", 0)
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler name.
         parsed = urlparse(self.path)
