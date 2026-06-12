@@ -433,6 +433,12 @@
       el.className = `msg${error ? " error" : ""}`;
     }
 
+    function revealTokenBox(message) {
+      hasServerToken = false;
+      document.getElementById("tokenBox").style.display = "";
+      if (message) setMessage(message, true);
+    }
+
     function formatPct(value) {
       const n = Number(value);
       return Number.isFinite(n) ? `${n.toFixed(2)}%` : "-";
@@ -569,12 +575,17 @@
         renderCards(rows);
         renderTable(rows);
         updateMeta(null, 0);
+        const message = err.message || String(err);
         const text = err.name === "AbortError"
           ? "掃描超過 3 分鐘，請先把分點候選改 80 檔再試。"
-          : (err.message === "Load failed" || err.message === "Failed to fetch"
+          : (message === "Load failed" || message === "Failed to fetch"
             ? "連線失敗。請使用雲端網址 https://tw-chip-rebound.onrender.com；127.0.0.1 或 192.168 開頭的網址需要電腦伺服器開著。"
-            : (err.message || String(err)));
-        setMessage(text, true);
+            : message);
+        if (text.includes("Token is illegal") || text.includes("token") && text.includes("illegal")) {
+          revealTokenBox("雲端 FinMind token 無效，請貼上正確 token 後再掃描。貼一次會存在這台裝置的瀏覽器。");
+        } else {
+          setMessage(text, true);
+        }
       } finally {
         btn.disabled = false;
       }
