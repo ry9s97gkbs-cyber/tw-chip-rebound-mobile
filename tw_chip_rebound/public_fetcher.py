@@ -26,6 +26,7 @@ from .screener import (
     is_excluded,
     is_price_weak,
     merge_inputs,
+    rank_stocks,
     score_stock,
     screen_stocks,
 )
@@ -255,7 +256,12 @@ def build_branch_row(token: str, stock_id: str, target_date: str) -> dict[str, A
 
 
 def _candidate_ids(daily: pd.DataFrame, main: pd.DataFrame, target_date: str, limit: int) -> list[str]:
-    """Build a cheap preliminary candidate list before broker calls."""
+    """Build a cheap preliminary candidate list before broker calls.
+
+    This is deliberately looser than the final strategy.  Its job is to decide
+    which stocks deserve the slower branch API calls, so it keeps anything with
+    usable liquidity plus at least one practical rebound clue.
+    """
 
     from .screener import calculate_indicators
 
@@ -276,15 +282,20 @@ def _candidate_ids(daily: pd.DataFrame, main: pd.DataFrame, target_date: str, li
     if day.empty:
         return []
     config = ScreenConfig()
-    day = day[
-        (day["volume"] >= config.min_volume)
-        & (day["close"] >= config.min_price)
-        & (day["pct_change"] <= config.max_gain_for_price_weak)
-        & (day["main_buy_sell"] >= config.min_main_buy)
-        & (day["main_volume_ratio"] >= config.min_main_volume_ratio)
-    ]
-    day = day[day.apply(lambda row: is_price_weak(row, config) and not is_excluded(row, config), axis=1)]
-    day["_rank"] = day["main_volume_ratio"].fillna(0) * 100 + day["main_buy_sell"].fillna(0) / 1000
+    day = day[day.apply(lambda row: not is_excluded(row, config), axis=1)].copy()
+    day["_price_weak"] = day.apply(lambda row: is_price_weak(row, config), axis=1)
+    day["_main_positive"] = day["main_buy_sell"].fillna(0) > 0
+    day["_main_ratio_ok"] = day["main_volume_ratio"].fillna(0) >= 0.02
+    day["_concentration_ok"] = day["concentration_5d"].fillna(-999) > day["concentration_20d"].fillna(-999)
+    day = day[day["_price_weak"] | day["_main_positive"] | day["_concentration_ok"]].copy()
+    day["_rank"] = (
+        day["_price_weak"].astype(int) * 40
+        + day["_main_positive"].astype(int) * 25
+        + day["_main_ratio_ok"].astype(int) * 15
+        + day["_concentration_ok"].astype(int) * 10
+        + day["main_volume_ratio"].fillna(0).clip(lower=0, upper=0.2) * 100
+        + day["main_buy_sell"].fillna(0).clip(lower=0, upper=10000) / 1000
+    )
     return day.sort_values("_rank", ascending=False)["stock_id"].head(limit).astype(str).tolist()
 
 
@@ -348,6 +359,8 @@ def screen_with_public_data(
     target_date: str | None = None,
     days: int = 45,
     branch_limit: int = 80,
+    top_n: int = 30,
+    mode: str = "practical",
 ) -> FetchResult:
     """Fetch public data, enrich candidates with broker branches, and screen."""
 
@@ -381,11 +394,26 @@ def screen_with_public_data(
     branch = pd.DataFrame(branch_rows)
     diagnostics = diagnostic_counts(daily, main, branch, target)
 
-    result = screen_stocks(daily, main, branch_chip=branch, target_date=target)
+    if mode == "strict":
+        result = screen_stocks(daily, main, branch_chip=branch, target_date=target)
+        rows = result.to_dict(orient="records")
+    else:
+        result = rank_stocks(
+            daily,
+            main,
+            branch_chip=branch,
+            target_date=target,
+            top_n=top_n,
+            candidate_stock_ids=candidates,
+        )
+        rows = result.to_dict(orient="records")
+
     meta = {
         "target_date": target,
         "start_date": start_date,
         "end_date": end_date,
+        "mode": mode,
+        "top_n": top_n,
         "price_rows": int(len(daily)),
         "chip_rows": int(len(main)),
         "branch_candidates": int(len(candidates)),
@@ -394,4 +422,4 @@ def screen_with_public_data(
         "diagnostics": diagnostics,
         "data_source": "FinMind TaiwanStockPrice, TaiwanStockInstitutionalInvestorsBuySell, TaiwanStockTradingDailyReport",
     }
-    return FetchResult(rows=result.to_dict(orient="records"), meta=meta)
+    return FetchResult(rows=rows, meta=meta)

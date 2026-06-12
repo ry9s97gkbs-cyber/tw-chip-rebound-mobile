@@ -68,6 +68,8 @@ class MobileHandler(BaseHTTPRequestHandler):
         target_date = params.get("date", [""])[0] or None
         days = int(params.get("days", ["45"])[0])
         branch_limit = int(params.get("branch_limit", ["80"])[0])
+        top_n = int(params.get("top_n", ["30"])[0])
+        mode = params.get("mode", ["practical"])[0] or "practical"
         if not token:
             self._send_json(400, {"error": "請先輸入 FinMind token。"})
             return
@@ -77,6 +79,8 @@ class MobileHandler(BaseHTTPRequestHandler):
                 target_date=target_date,
                 days=days,
                 branch_limit=branch_limit,
+                top_n=top_n,
+                mode=mode,
             )
         except FinMindError as exc:
             self._send_json(502, {"error": str(exc)})
@@ -104,6 +108,8 @@ class MobileHandler(BaseHTTPRequestHandler):
         target_date = str(payload.get("date") or "") or None
         days = int(payload.get("days") or 45)
         branch_limit = int(payload.get("branch_limit") or 80)
+        top_n = int(payload.get("top_n") or 30)
+        mode = str(payload.get("mode") or "practical")
         if not token:
             self._send_json(400, {"error": "請先輸入 FinMind token。"})
             return
@@ -113,6 +119,8 @@ class MobileHandler(BaseHTTPRequestHandler):
                 target_date=target_date,
                 days=days,
                 branch_limit=branch_limit,
+                top_n=top_n,
+                mode=mode,
             )
         except FinMindError as exc:
             self._send_json(502, {"error": str(exc)})

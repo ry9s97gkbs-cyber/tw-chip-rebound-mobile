@@ -28,6 +28,30 @@ OUTPUT_COLUMNS = [
     "訊號分類",
 ]
 
+PRACTICAL_OUTPUT_COLUMNS = [
+    *OUTPUT_COLUMNS,
+    "觀察理由",
+    "未通過條件",
+]
+
+FLAG_LABELS = {
+    "long_upper_shadow": "長上影線",
+    "close_near_low": "收盤近低",
+    "black_k": "收黑K",
+    "intraday_spike_faded": "盤中急拉回落",
+    "break_short_ma": "跌破短均",
+    "main_buy_positive": "主力買超",
+    "main_buy_over_1000": "買超千張",
+    "main_buy_ratio_over_5": "買超佔比>5%",
+    "count_diff_negative": "家數集中",
+    "concentration_5d_stronger": "5日集中轉強",
+    "top15_cost_above_close": "主力成本高於收盤",
+    "known_branch_in_top15": "知名分點",
+    "volume_above_ma20": "量大於20日均量",
+    "main_buy_3d": "近3日連買",
+    "holder_count_down": "集保戶數下降",
+}
+
 
 def _value(row: pd.Series, key: str, default: float = float("nan")) -> float:
     """Read a numeric row value without raising KeyError."""
@@ -284,6 +308,75 @@ def classify_signal(row: pd.Series, score: int) -> str:
     return "觀察"
 
 
+def _safe_round(value: object, digits: int = 2) -> float | None:
+    """Round finite numbers and return None for missing values."""
+
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(number):
+        return None
+    return round(number, digits)
+
+
+def _safe_int(value: object) -> int | None:
+    """Convert finite numbers to int and return None for missing values."""
+
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(number):
+        return None
+    return int(number)
+
+
+def _reason_text(flags: dict[str, bool]) -> str:
+    """Build a compact reason string for mobile cards."""
+
+    labels = [FLAG_LABELS[key] for key, passed in flags.items() if passed and key in FLAG_LABELS]
+    return "、".join(labels[:6])
+
+
+def _missing_text(flags: dict[str, bool]) -> str:
+    """Show the important unmet gates so a zero-result day is still explainable."""
+
+    important = (
+        "main_buy_over_1000",
+        "main_buy_ratio_over_5",
+        "count_diff_negative",
+        "concentration_5d_stronger",
+        "top15_cost_above_close",
+    )
+    labels = [FLAG_LABELS[key] for key in important if not flags.get(key) and key in FLAG_LABELS]
+    return "、".join(labels[:5])
+
+
+def _format_output_row(row: pd.Series, score: int, flags: dict[str, bool]) -> dict[str, object]:
+    """Format one internal row into the mobile/CSV output schema."""
+
+    return {
+        "股票代號": row["stock_id"],
+        "股票名稱": row.get("stock_name", ""),
+        "收盤價": _safe_round(row["close"], 2),
+        "今日漲跌幅": _safe_round(row["pct_change"], 2),
+        "最高價": _safe_round(row["high"], 2),
+        "成交量": _safe_int(row["volume"]),
+        "主力買賣超": _safe_int(row["main_buy_sell"]),
+        "主力買超佔成交量比例": _safe_round(_value(row, "main_volume_ratio"), 4),
+        "家數差": _safe_int(row["count_diff"]),
+        "5日集中度": _safe_round(row["concentration_5d"], 4),
+        "20日集中度": _safe_round(row.get("concentration_20d", 0), 4),
+        "買方Top15均價": _safe_round(row.get("top15_avg_price", float("nan")), 2),
+        "收盤價與主力均價差距": _safe_round(row.get("main_cost_gap", float("nan")), 4),
+        "分數": score,
+        "訊號分類": classify_signal(row, score),
+        "觀察理由": _reason_text(flags),
+        "未通過條件": _missing_text(flags),
+    }
+
+
 def screen_stocks(
     daily: pd.DataFrame,
     main_chip: pd.DataFrame,
@@ -310,30 +403,68 @@ def screen_stocks(
         if score <= 60:
             continue
 
-        rows.append(
-            {
-                "股票代號": row["stock_id"],
-                "股票名稱": row.get("stock_name", ""),
-                "收盤價": round(row["close"], 2),
-                "今日漲跌幅": round(row["pct_change"], 2),
-                "最高價": round(row["high"], 2),
-                "成交量": int(row["volume"]),
-                "主力買賣超": int(row["main_buy_sell"]),
-                "主力買超佔成交量比例": round(_value(row, "main_volume_ratio"), 4),
-                "家數差": int(row["count_diff"]),
-                "5日集中度": round(row["concentration_5d"], 4),
-                "20日集中度": round(row.get("concentration_20d", 0), 4),
-                "買方Top15均價": round(row.get("top15_avg_price", float("nan")), 2),
-                "收盤價與主力均價差距": round(row.get("main_cost_gap", float("nan")), 4),
-                "分數": score,
-                "訊號分類": classify_signal(row, score),
-            }
-        )
+        rows.append({key: value for key, value in _format_output_row(row, score, _flags).items() if key in OUTPUT_COLUMNS})
 
     output = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
     if not output.empty:
         output = output.sort_values(["分數", "主力買超佔成交量比例"], ascending=False)
     return output
+
+
+def rank_stocks(
+    daily: pd.DataFrame,
+    main_chip: pd.DataFrame,
+    branch_chip: pd.DataFrame | None = None,
+    custody: pd.DataFrame | None = None,
+    target_date: str | None = None,
+    top_n: int = 30,
+    config: ScreenConfig = ScreenConfig(),
+    candidate_stock_ids: Iterable[str] | None = None,
+) -> pd.DataFrame:
+    """Return a practical Top-N watchlist instead of only all-or-nothing strict passes.
+
+    The strict screener is useful for clean signals, but many trading days have
+    no stock passing every chip gate.  This ranking keeps the hard risk filters
+    (liquidity, price, limit-down, overextended move), then sorts the remaining
+    candidates by the same 100-point framework plus a small tie-breaker from
+    net-buy strength.  The output is meant for mobile daily observation.
+    """
+
+    df = merge_inputs(daily, main_chip, branch_chip, custody)
+    if target_date:
+        target = pd.to_datetime(target_date).date()
+    else:
+        target = df["date"].max()
+    df = df[df["date"] == target].copy()
+
+    if candidate_stock_ids is not None:
+        ids = {str(stock_id) for stock_id in candidate_stock_ids}
+        df = df[df["stock_id"].astype(str).isin(ids)].copy()
+
+    rows: list[dict[str, object]] = []
+    for _, row in df.iterrows():
+        if is_excluded(row, config):
+            continue
+        score, flags = score_stock(row, config)
+        if not (is_price_weak(row, config) or flags["main_buy_positive"] or flags["concentration_5d_stronger"]):
+            continue
+
+        main_ratio = _value(row, "main_volume_ratio", 0)
+        main_buy = row.get("main_buy_sell", 0)
+        main_ratio_value = float(main_ratio) if pd.notna(main_ratio) else 0.0
+        main_buy_value = float(main_buy) if pd.notna(main_buy) else 0.0
+        tie_breaker = max(0.0, min(main_ratio_value, 0.2)) * 100
+        tie_breaker += max(0.0, min(main_buy_value / 1000, 10))
+        output = _format_output_row(row, score, flags)
+        output["_rank"] = score * 100 + tie_breaker
+        rows.append(output)
+
+    output = pd.DataFrame(rows)
+    if output.empty:
+        return pd.DataFrame(columns=PRACTICAL_OUTPUT_COLUMNS)
+    output = output.sort_values(["_rank", "主力買超佔成交量比例"], ascending=False)
+    output = output.head(max(1, int(top_n)))
+    return output[PRACTICAL_OUTPUT_COLUMNS].reset_index(drop=True)
 
 
 def write_csv(result: pd.DataFrame, output_path: str | Path) -> None:

@@ -103,6 +103,9 @@
       grid-template-columns: 1fr 1fr;
       gap: 10px;
     }
+    .row.three {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
     .status {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -324,15 +327,30 @@
           <label>日期
             <input id="date" type="date">
           </label>
+          <label>輸出
+            <select id="topN">
+              <option value="20">Top 20</option>
+              <option value="30" selected>Top 30</option>
+              <option value="50">Top 50</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label>模式
+            <select id="mode">
+              <option value="practical" selected>實用觀察</option>
+              <option value="strict">嚴格條件</option>
+            </select>
+          </label>
           <label>分點候選
             <select id="branchLimit">
-              <option value="80" selected>80 檔</option>
-              <option value="120">120 檔</option>
+              <option value="80">80 檔</option>
+              <option value="120" selected>120 檔</option>
               <option value="180">180 檔</option>
             </select>
           </label>
         </div>
-        <div class="msg" id="hint">日期空白會使用資料中的最新交易日。</div>
+        <div class="msg" id="hint">實用觀察會回傳排名前面的觀察名單；嚴格條件才會用原本全通過邏輯。</div>
       </section>
 
       <section class="panel">
@@ -365,7 +383,7 @@
     const cols = [
       "股票代號", "股票名稱", "收盤價", "今日漲跌幅", "最高價", "成交量", "主力買賣超",
       "主力買超佔成交量比例", "家數差", "5日集中度", "20日集中度", "買方Top15均價",
-      "收盤價與主力均價差距", "分數", "訊號分類"
+      "收盤價與主力均價差距", "分數", "訊號分類", "觀察理由", "未通過條件"
     ];
     let rows = [];
     let hasServerToken = false;
@@ -444,6 +462,7 @@
               <div class="fact"><span>家數差</span><b>${row["家數差"]}</b></div>
               <div class="fact"><span>Top15 均價</span><b>${row["買方Top15均價"]}</b></div>
             </div>
+            <div class="msg">理由：${row["觀察理由"] || "分數排序觀察"}${row["未通過條件"] ? `｜未滿足：${row["未通過條件"]}` : ""}</div>
           </article>
         `;
       }).join("");
@@ -511,6 +530,8 @@
       updateTokenState();
       const date = document.getElementById("date").value;
       const branchLimit = Number(document.getElementById("branchLimit").value);
+      const topN = Number(document.getElementById("topN").value);
+      const mode = document.getElementById("mode").value;
       const btn = document.getElementById("scanBtn");
       const download = document.getElementById("downloadBtn");
       btn.disabled = true;
@@ -522,7 +543,14 @@
         const resp = await fetch("/api/screen", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: hasServerToken ? "" : token, date, branch_limit: branchLimit, days: 45 }),
+          body: JSON.stringify({
+            token: hasServerToken ? "" : token,
+            date,
+            branch_limit: branchLimit,
+            top_n: topN,
+            mode,
+            days: 45
+          }),
           signal: controller.signal
         });
         clearTimeout(timer);
@@ -534,7 +562,8 @@
         updateMeta(payload.meta, rows.length);
         download.disabled = !rows.length;
         const errors = payload.meta?.branch_errors?.length ? ` 分點錯誤 ${payload.meta.branch_errors.length} 筆。` : "";
-        setMessage(`完成，共 ${rows.length} 檔。${errors}`);
+        const modeText = payload.meta?.mode === "strict" ? "嚴格條件" : `Top ${payload.meta?.top_n || topN} 實用觀察`;
+        setMessage(`完成，${modeText} 共 ${rows.length} 檔。${errors}`);
       } catch (err) {
         rows = [];
         renderCards(rows);
