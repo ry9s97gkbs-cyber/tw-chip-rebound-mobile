@@ -9,6 +9,7 @@ from typing import Iterable
 import pandas as pd
 
 KNOWN_BRANCH_KEYWORDS = ("凱基台北", "富邦", "元大", "統一", "國票", "港商野村")
+DAY_TRADE_BRANCH_KEYWORDS = ("凱基台北", "元大土城永寧", "美林")
 
 OUTPUT_COLUMNS = [
     "股票代號",
@@ -22,6 +23,7 @@ OUTPUT_COLUMNS = [
     "家數差",
     "5日集中度",
     "20日集中度",
+    "Top15淨買佔量",
     "買方Top15均價",
     "收盤價與主力均價差距",
     "分數",
@@ -32,6 +34,7 @@ PRACTICAL_OUTPUT_COLUMNS = [
     *OUTPUT_COLUMNS,
     "觀察理由",
     "未通過條件",
+    "風險提醒",
 ]
 
 FLAG_LABELS = {
@@ -49,6 +52,13 @@ FLAG_LABELS = {
     "known_branch_in_top15": "知名分點",
     "volume_above_ma20": "量大於20日均量",
     "main_buy_3d": "近3日連買",
+    "foreign_buy_3d": "外資連買",
+    "investment_trust_buy_3d": "投信連買",
+    "investment_trust_new_buy": "投信從0到1",
+    "top15_net_ratio_over_10": "Top15集中>10%",
+    "ma_convergence": "均線糾結",
+    "recently_overextended": "短線漲多",
+    "day_trade_branch_warning": "隔日沖分點",
     "holder_count_down": "集保戶數下降",
 }
 
@@ -79,6 +89,9 @@ class ScreenConfig:
     near_low_ratio: float = 0.02
     limit_down_pct: float = -9.5
     max_close_above_main_cost_pct: float = 0.08
+    max_20d_gain_pct: float = 50.0
+    max_close_above_ma20_pct: float = 0.15
+    min_top15_net_volume_ratio: float = 0.10
 
 
 def calculate_indicators(daily: pd.DataFrame) -> pd.DataFrame:
@@ -97,7 +110,13 @@ def calculate_indicators(daily: pd.DataFrame) -> pd.DataFrame:
     df["intraday_high_pct"] = (df["high"] / df["prev_close"] - 1) * 100
     df["ma2"] = grouped["close"].rolling(2).mean().reset_index(level=0, drop=True)
     df["ma5"] = grouped["close"].rolling(5).mean().reset_index(level=0, drop=True)
+    df["ma20"] = grouped["close"].rolling(20).mean().reset_index(level=0, drop=True)
+    df["ma60"] = grouped["close"].rolling(60).mean().reset_index(level=0, drop=True)
     df["ma20_volume"] = grouped["volume"].rolling(20).mean().reset_index(level=0, drop=True)
+    df["close_20d_ago"] = grouped["close"].shift(20)
+    df["pct_change_20d"] = (df["close"] / df["close_20d_ago"] - 1) * 100
+    ma_stack = df[["ma5", "ma20", "ma60"]]
+    df["ma_spread_pct"] = (ma_stack.max(axis=1) - ma_stack.min(axis=1)) / df["close"]
     df["today_mid_price"] = (df["high"] + df["low"]) / 2
     df["next_close"] = grouped["close"].shift(-1)
 
@@ -132,7 +151,15 @@ def merge_inputs(
         "count_diff",
         "concentration_5d",
         "concentration_20d",
+        "top15_net_buy",
+        "top15_sell",
+        "top15_net_volume_ratio",
         "top15_avg_price",
+        "foreign_buy_sell",
+        "investment_trust_buy_sell",
+        "foreign_buy_3d_count",
+        "investment_trust_buy_3d_count",
+        "investment_trust_new_buy_signal",
     ):
         if col not in df.columns:
             df[col] = float("nan")
@@ -140,6 +167,7 @@ def merge_inputs(
         df["top15_brokers"] = ""
 
     df["main_volume_ratio"] = df["main_buy_sell"] / df["volume"]
+    df["top15_net_volume_ratio"] = df["top15_net_buy"] / df["volume"]
     df["main_cost_gap"] = (df["top15_avg_price"] - df["close"]) / df["close"]
     df["close_above_main_cost_pct"] = (df["close"] - df["top15_avg_price"]) / df["top15_avg_price"]
     df["prev_concentration_5d"] = df.groupby("stock_id")["concentration_5d"].shift(1)
@@ -221,6 +249,20 @@ def bonus_conditions(
         "top15_cost_above_close": bool(pd.notna(row.get("top15_avg_price")) and row["top15_avg_price"] > row["close"]),
         # Top15 買方出現市場常追蹤的分點名稱，視為額外觀察訊號。
         "known_branch_in_top15": any(keyword in brokers for keyword in known_branch_keywords),
+        # 買方 Top15 總買量減賣方 Top15 總賣量，佔當日成交量大於 10%，代表籌碼真的集中。
+        "top15_net_ratio_over_10": bool(_value(row, "top15_net_volume_ratio") >= ScreenConfig().min_top15_net_volume_ratio),
+        # 外資連續買超 3 天以上，只當輔助確認，避免單日法人買超造成誤判。
+        "foreign_buy_3d": bool(_value(row, "foreign_buy_3d_count", 0) >= 3),
+        # 投信連續買超 3 天以上，較常見於波段型籌碼。
+        "investment_trust_buy_3d": bool(_value(row, "investment_trust_buy_3d_count", 0) >= 3),
+        # 投信前 20 個交易日沒有明顯買超，今天突然買超且佔量大於 2%，視為從 0 到 1。
+        "investment_trust_new_buy": bool(_value(row, "investment_trust_new_buy_signal", 0) >= 1),
+        # MA5/20/60 靠近，代表股價可能仍在整理區，不是已經遠離均線的追高型態。
+        "ma_convergence": bool(pd.notna(row.get("ma_spread_pct")) and row["ma_spread_pct"] <= 0.06),
+        # 近 20 日漲幅過大時標記風險；若同時遠離 MA20，會在排除條件中直接濾掉。
+        "recently_overextended": bool(pd.notna(row.get("pct_change_20d")) and row["pct_change_20d"] > 30),
+        # 出現隔日沖常見分點時不加分，只在理由中標示風險，提醒不要隔天盲目追。
+        "day_trade_branch_warning": any(keyword in brokers for keyword in DAY_TRADE_BRANCH_KEYWORDS),
         # 今日成交量大於 20 日均量，代表有量能配合。
         "volume_above_ma20": bool(pd.notna(row["ma20_volume"]) and row["volume"] > row["ma20_volume"]),
         # 近 3 日主力連續買超，代表不是單日突發買盤。
@@ -258,6 +300,13 @@ def is_excluded(row: pd.Series, config: ScreenConfig = ScreenConfig()) -> bool:
         and row["top15_avg_price"] > 0
         and row["close_above_main_cost_pct"] > config.max_close_above_main_cost_pct
     )
+    recently_overextended = (
+        pd.notna(row.get("pct_change_20d"))
+        and row["pct_change_20d"] > config.max_20d_gain_pct
+        and pd.notna(row.get("ma20"))
+        and row["ma20"] > 0
+        and (row["close"] / row["ma20"] - 1) > config.max_close_above_ma20_pct
+    )
     return bool(
         # 今日跌停附近排除，避免接刀。
         row["pct_change"] <= config.limit_down_pct
@@ -269,6 +318,8 @@ def is_excluded(row: pd.Series, config: ScreenConfig = ScreenConfig()) -> bool:
         or row["pct_change"] > config.max_gain_for_price_weak
         # 收盤價高於主力均價太多，代表已離主力成本過遠，不追高。
         or cost_too_far
+        # 20 日已大漲且遠離 MA20，容易變成追高抬轎。
+        or recently_overextended
     )
 
 
@@ -289,8 +340,14 @@ def score_stock(row: pd.Series, config: ScreenConfig = ScreenConfig()) -> tuple[
     score += 10 if chip["count_diff_negative"] else 0
     score += 10 if chip["concentration_5d_stronger"] else 0
     score += 15 if bonus["top15_cost_above_close"] else 0
+    score += 8 if bonus["top15_net_ratio_over_10"] else 0
+    score += 6 if bonus["investment_trust_buy_3d"] else 0
+    score += 8 if bonus["investment_trust_new_buy"] else 0
+    score += 4 if bonus["foreign_buy_3d"] else 0
+    score += 4 if bonus["ma_convergence"] else 0
+    score -= 8 if bonus["day_trade_branch_warning"] and not bonus["top15_cost_above_close"] else 0
 
-    return min(score, 100), {**price, **chip, **bonus}
+    return max(0, min(score, 100)), {**price, **chip, **bonus}
 
 
 def classify_signal(row: pd.Series, score: int) -> str:
@@ -335,8 +392,20 @@ def _safe_int(value: object) -> int | None:
 def _reason_text(flags: dict[str, bool]) -> str:
     """Build a compact reason string for mobile cards."""
 
-    labels = [FLAG_LABELS[key] for key, passed in flags.items() if passed and key in FLAG_LABELS]
+    risk_keys = {"day_trade_branch_warning", "recently_overextended"}
+    labels = [FLAG_LABELS[key] for key, passed in flags.items() if passed and key in FLAG_LABELS and key not in risk_keys]
     return "、".join(labels[:6])
+
+
+def _risk_text(flags: dict[str, bool]) -> str:
+    """Build a compact risk warning string for mobile cards."""
+
+    risks = []
+    if flags.get("day_trade_branch_warning"):
+        risks.append("含隔日沖常見分點，隔天不追開高")
+    if flags.get("recently_overextended"):
+        risks.append("短線漲多，避開追高")
+    return "、".join(risks)
 
 
 def _missing_text(flags: dict[str, bool]) -> str:
@@ -368,12 +437,14 @@ def _format_output_row(row: pd.Series, score: int, flags: dict[str, bool]) -> di
         "家數差": _safe_int(row["count_diff"]),
         "5日集中度": _safe_round(row["concentration_5d"], 4),
         "20日集中度": _safe_round(row.get("concentration_20d", 0), 4),
+        "Top15淨買佔量": _safe_round(row.get("top15_net_volume_ratio", float("nan")), 4),
         "買方Top15均價": _safe_round(row.get("top15_avg_price", float("nan")), 2),
         "收盤價與主力均價差距": _safe_round(row.get("main_cost_gap", float("nan")), 4),
         "分數": score,
         "訊號分類": classify_signal(row, score),
         "觀察理由": _reason_text(flags),
         "未通過條件": _missing_text(flags),
+        "風險提醒": _risk_text(flags),
     }
 
 

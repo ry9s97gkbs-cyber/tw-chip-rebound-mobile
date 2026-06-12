@@ -66,7 +66,7 @@ class MobileHandler(BaseHTTPRequestHandler):
         params = parse_qs(parsed.query)
         token = clean_token(params.get("token", [""])[0]) or SERVER_TOKEN
         target_date = params.get("date", [""])[0] or None
-        days = int(params.get("days", ["45"])[0])
+        days = int(params.get("days", ["90"])[0])
         branch_limit = int(params.get("branch_limit", ["80"])[0])
         top_n = int(params.get("top_n", ["30"])[0])
         mode = params.get("mode", ["practical"])[0] or "practical"
@@ -106,7 +106,7 @@ class MobileHandler(BaseHTTPRequestHandler):
 
         token = clean_token(str(payload.get("token", ""))) or SERVER_TOKEN
         target_date = str(payload.get("date") or "") or None
-        days = int(payload.get("days") or 45)
+        days = int(payload.get("days") or 90)
         branch_limit = int(payload.get("branch_limit") or 80)
         top_n = int(payload.get("top_n") or 30)
         mode = str(payload.get("mode") or "practical")

@@ -188,15 +188,33 @@ def fetch_institutional(client: FinMindClient, start_date: str, end_date: str) -
         raise FinMindError("FinMind institutional buy/sell returned no rows")
     buy = df["buy"].map(_shares_to_lots)
     sell = df["sell"].map(_shares_to_lots)
+    investor_name = df.get("name")
+    if investor_name is None:
+        investor_name = df.get("institutional_investors", "")
     df = pd.DataFrame(
         {
             "date": pd.to_datetime(df["date"]).dt.date,
             "stock_id": df["stock_id"].astype(str),
+            "investor_name": investor_name.astype(str) if hasattr(investor_name, "astype") else "",
             "net_lots": buy - sell,
         }
     )
     main = df.groupby(["date", "stock_id"], as_index=False)["net_lots"].sum()
     main = main.rename(columns={"net_lots": "main_buy_sell"})
+    foreign = (
+        df[df["investor_name"].str.contains("外資", na=False)]
+        .groupby(["date", "stock_id"], as_index=False)["net_lots"]
+        .sum()
+        .rename(columns={"net_lots": "foreign_buy_sell"})
+    )
+    trust = (
+        df[df["investor_name"].str.contains("投信", na=False)]
+        .groupby(["date", "stock_id"], as_index=False)["net_lots"]
+        .sum()
+        .rename(columns={"net_lots": "investment_trust_buy_sell"})
+    )
+    main = main.merge(foreign, on=["date", "stock_id"], how="left")
+    main = main.merge(trust, on=["date", "stock_id"], how="left")
     return main
 
 
@@ -206,12 +224,52 @@ def add_concentration(main: pd.DataFrame, daily: pd.DataFrame) -> pd.DataFrame:
     df = main.merge(daily[["date", "stock_id", "volume"]], on=["date", "stock_id"], how="left")
     df = df.sort_values(["stock_id", "date"]).copy()
     grouped = df.groupby("stock_id", group_keys=False)
+    for col in ("foreign_buy_sell", "investment_trust_buy_sell"):
+        if col not in df.columns:
+            df[col] = 0.0
+        df[col] = df[col].fillna(0.0)
     buy_5 = grouped["main_buy_sell"].rolling(5).sum().reset_index(level=0, drop=True)
     vol_5 = grouped["volume"].rolling(5).sum().reset_index(level=0, drop=True)
     buy_20 = grouped["main_buy_sell"].rolling(20).sum().reset_index(level=0, drop=True)
     vol_20 = grouped["volume"].rolling(20).sum().reset_index(level=0, drop=True)
     df["concentration_5d"] = buy_5 / vol_5
     df["concentration_20d"] = buy_20 / vol_20
+    df["foreign_buy_3d_count"] = (
+        df.assign(_flag=(df["foreign_buy_sell"] > 0).astype(int))
+        .groupby("stock_id")["_flag"]
+        .rolling(3)
+        .sum()
+        .reset_index(level=0, drop=True)
+    )
+    df["investment_trust_buy_3d_count"] = (
+        df.assign(_flag=(df["investment_trust_buy_sell"] > 0).astype(int))
+        .groupby("stock_id")["_flag"]
+        .rolling(3)
+        .sum()
+        .reset_index(level=0, drop=True)
+    )
+    df["investment_trust_buy_5d_count"] = (
+        df.assign(_flag=(df["investment_trust_buy_sell"] > 0).astype(int))
+        .groupby("stock_id")["_flag"]
+        .rolling(5)
+        .sum()
+        .reset_index(level=0, drop=True)
+    )
+    trust_prev_buy_days = (
+        df.assign(_flag=(df["investment_trust_buy_sell"] > 0).astype(int))
+        .groupby("stock_id")["_flag"]
+        .rolling(20)
+        .sum()
+        .reset_index(level=0, drop=True)
+        .groupby(df["stock_id"])
+        .shift(1)
+    )
+    trust_ratio = df["investment_trust_buy_sell"] / df["volume"]
+    df["investment_trust_new_buy_signal"] = (
+        (df["investment_trust_buy_sell"] > 0)
+        & (trust_ratio >= 0.02)
+        & (trust_prev_buy_days.fillna(0) == 0)
+    ).astype(int)
     return df.drop(columns=["volume"])
 
 
@@ -239,7 +297,10 @@ def build_branch_row(token: str, stock_id: str, target_date: str) -> dict[str, A
     grouped = grouped.merge(buy_amount, on=["securities_trader", "securities_trader_id"], how="left")
     grouped["net"] = grouped["buy"] - grouped["sell"]
     top = grouped[grouped["buy"] > 0].sort_values("buy", ascending=False).head(15)
+    sell_top = grouped[grouped["sell"] > 0].sort_values("sell", ascending=False).head(15)
     total_buy = top["buy"].sum()
+    total_sell = sell_top["sell"].sum()
+    net_top15 = total_buy - total_sell
     avg_price = top["_amount"].sum() / total_buy if total_buy else math.nan
     buyer_count = int((grouped["net"] > 0).sum())
     seller_count = int((grouped["net"] < 0).sum())
@@ -249,6 +310,8 @@ def build_branch_row(token: str, stock_id: str, target_date: str) -> dict[str, A
         "stock_id": stock_id,
         "top15_avg_price": avg_price,
         "top15_brokers": names,
+        "top15_net_buy": net_top15,
+        "top15_sell": total_sell,
         "buyer_count": buyer_count,
         "seller_count": seller_count,
         "count_diff": buyer_count - seller_count,
@@ -277,6 +340,7 @@ def _candidate_ids(daily: pd.DataFrame, main: pd.DataFrame, target_date: str, li
     if "concentration_20d" not in merged.columns:
         merged["concentration_20d"] = math.nan
     merged["top15_avg_price"] = math.nan
+    merged["top15_net_volume_ratio"] = math.nan
     merged["close_above_main_cost_pct"] = math.nan
     day = merged[merged["date"] == target].copy()
     if day.empty:
@@ -287,12 +351,18 @@ def _candidate_ids(daily: pd.DataFrame, main: pd.DataFrame, target_date: str, li
     day["_main_positive"] = day["main_buy_sell"].fillna(0) > 0
     day["_main_ratio_ok"] = day["main_volume_ratio"].fillna(0) >= 0.02
     day["_concentration_ok"] = day["concentration_5d"].fillna(-999) > day["concentration_20d"].fillna(-999)
+    day["_trust_new"] = day.get("investment_trust_new_buy_signal", pd.Series(0, index=day.index)).fillna(0) >= 1
+    day["_trust_3d"] = day.get("investment_trust_buy_3d_count", pd.Series(0, index=day.index)).fillna(0) >= 3
+    day["_foreign_3d"] = day.get("foreign_buy_3d_count", pd.Series(0, index=day.index)).fillna(0) >= 3
     day = day[day["_price_weak"] | day["_main_positive"] | day["_concentration_ok"]].copy()
     day["_rank"] = (
         day["_price_weak"].astype(int) * 40
         + day["_main_positive"].astype(int) * 25
         + day["_main_ratio_ok"].astype(int) * 15
         + day["_concentration_ok"].astype(int) * 10
+        + day["_trust_new"].astype(int) * 18
+        + day["_trust_3d"].astype(int) * 12
+        + day["_foreign_3d"].astype(int) * 8
         + day["main_volume_ratio"].fillna(0).clip(lower=0, upper=0.2) * 100
         + day["main_buy_sell"].fillna(0).clip(lower=0, upper=10000) / 1000
     )
@@ -357,7 +427,7 @@ def diagnostic_counts(
 def screen_with_public_data(
     token: str,
     target_date: str | None = None,
-    days: int = 45,
+    days: int = 90,
     branch_limit: int = 80,
     top_n: int = 30,
     mode: str = "practical",
