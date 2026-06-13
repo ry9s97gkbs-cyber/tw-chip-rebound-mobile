@@ -556,7 +556,7 @@
             branch_limit: branchLimit,
             top_n: topN,
             mode,
-            days: 90
+            days: 45
           }),
           signal: controller.signal
         });
@@ -569,8 +569,9 @@
         updateMeta(payload.meta, rows.length);
         download.disabled = !rows.length;
         const errors = payload.meta?.branch_errors?.length ? ` 分點錯誤 ${payload.meta.branch_errors.length} 筆。` : "";
+        const skipped = payload.meta?.branch_skipped_reason ? ` ${payload.meta.branch_skipped_reason}` : "";
         const modeText = payload.meta?.mode === "strict" ? "嚴格條件" : `Top ${payload.meta?.top_n || topN} 實用觀察`;
-        setMessage(`完成，${modeText} 共 ${rows.length} 檔。${errors}`);
+        setMessage(`完成，${modeText} 共 ${rows.length} 檔。${errors}${skipped}`);
       } catch (err) {
         rows = [];
         renderCards(rows);
