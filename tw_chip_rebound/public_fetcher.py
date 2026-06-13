@@ -112,7 +112,11 @@ class FinMindClient:
 
 def _to_date_string(value: str | None) -> str:
     if value:
-        return value
+        text = str(value).strip().replace("/", "-")
+        parsed = pd.to_datetime(text, errors="coerce")
+        if pd.isna(parsed):
+            raise FinMindError(f"日期格式錯誤：{value}。請使用 YYYY-MM-DD，例如 2026-06-12。")
+        return parsed.date().isoformat()
     return date.today().isoformat()
 
 
@@ -120,6 +124,21 @@ def _range_dates(end_date: str | None, days: int) -> tuple[str, str]:
     end = datetime.strptime(_to_date_string(end_date), "%Y-%m-%d").date()
     start = end - timedelta(days=max(days, 25) * 2)
     return start.isoformat(), end.isoformat()
+
+
+def _resolve_target_date(daily: pd.DataFrame, requested_date: str | None) -> str:
+    """Use requested date when available, otherwise latest available trading day."""
+
+    available = sorted(set(pd.to_datetime(daily["date"]).dt.date))
+    if not available:
+        raise FinMindError("價量資料沒有可用交易日。")
+    if requested_date is None:
+        return available[-1].isoformat()
+    requested = datetime.strptime(_to_date_string(requested_date), "%Y-%m-%d").date()
+    candidates = [day for day in available if day <= requested]
+    if not candidates:
+        raise FinMindError(f"{requested.isoformat()} 前沒有可用交易日資料。")
+    return candidates[-1].isoformat()
 
 
 def _iter_dates(start_date: str, end_date: str) -> list[date]:
@@ -678,10 +697,8 @@ def screen_with_public_data(
         else:
             daily["stock_name"] = daily["stock_name_info"]
         daily = daily.drop(columns=["stock_name_info"])
-    if target_date is None:
-        target = str(max(daily["date"]))
-    else:
-        target = target_date
+    requested_target = _to_date_string(target_date) if target_date else None
+    target = _resolve_target_date(daily, target_date)
 
     main = fetch_institutional(client, start_date, end_date)
     chip_source = main.attrs.get("source", "FinMind TaiwanStockInstitutionalInvestorsBuySell")
@@ -725,6 +742,7 @@ def screen_with_public_data(
 
     meta = {
         "target_date": target,
+        "requested_date": requested_target,
         "start_date": start_date,
         "end_date": end_date,
         "mode": mode,
