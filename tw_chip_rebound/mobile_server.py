@@ -70,9 +70,6 @@ class MobileHandler(BaseHTTPRequestHandler):
         branch_limit = int(params.get("branch_limit", ["80"])[0])
         top_n = int(params.get("top_n", ["30"])[0])
         mode = params.get("mode", ["practical"])[0] or "practical"
-        if not token:
-            self._send_json(400, {"error": "請先輸入 FinMind token。"})
-            return
         try:
             result = screen_with_public_data(
                 token=token,
@@ -110,9 +107,6 @@ class MobileHandler(BaseHTTPRequestHandler):
         branch_limit = int(payload.get("branch_limit") or 80)
         top_n = int(payload.get("top_n") or 30)
         mode = str(payload.get("mode") or "practical")
-        if not token:
-            self._send_json(400, {"error": "請先輸入 FinMind token。"})
-            return
         try:
             result = screen_with_public_data(
                 token=token,

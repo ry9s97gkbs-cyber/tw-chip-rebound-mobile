@@ -528,10 +528,6 @@
 
     async function scan() {
       const token = cleanToken(tokenInput.value);
-      if (!token && !hasServerToken) {
-        setMessage("請先輸入 FinMind token。", true);
-        return;
-      }
       tokenInput.value = token;
       localStorage.setItem("finmindToken", token);
       updateTokenState();
@@ -543,7 +539,7 @@
       const download = document.getElementById("downloadBtn");
       btn.disabled = true;
       download.disabled = true;
-      setMessage("抓取公開資料中。會先抓價量與法人籌碼，再平行抓候選股分點...");
+      setMessage(token || hasServerToken ? "抓取資料中。會先試 FinMind，再自動接公開資料備援。" : "未提供 token，改用 TWSE/TPEx 公開資料掃描。");
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 180000);
