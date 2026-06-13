@@ -584,6 +584,9 @@ def _candidate_ids(daily: pd.DataFrame, main: pd.DataFrame, target_date: str, li
         merged["main_buy_sell"] = math.nan
     merged["main_volume_ratio"] = merged["main_buy_sell"].fillna(0) / merged["volume"]
     merged["count_diff"] = -1
+    buy_flag = (merged["main_buy_sell"].fillna(0) > 0).astype(int)
+    streak_group = buy_flag.eq(0).groupby(merged["stock_id"]).cumsum()
+    merged["main_buy_streak"] = buy_flag.groupby([merged["stock_id"], streak_group]).cumsum()
     if "concentration_5d" not in merged.columns:
         merged["concentration_5d"] = math.nan
     if "concentration_20d" not in merged.columns:
@@ -598,6 +601,7 @@ def _candidate_ids(daily: pd.DataFrame, main: pd.DataFrame, target_date: str, li
     day = day[day.apply(lambda row: not is_excluded(row, config), axis=1)].copy()
     day["_price_weak"] = day.apply(lambda row: is_price_weak(row, config), axis=1)
     day["_main_positive"] = day["main_buy_sell"].fillna(0) > 0
+    day["_main_2d"] = day["main_buy_streak"].fillna(0) >= 2
     day["_main_ratio_ok"] = day["main_volume_ratio"].fillna(0) >= 0.02
     day["_concentration_ok"] = day["concentration_5d"].fillna(-999) > day["concentration_20d"].fillna(-999)
     day["_trust_new"] = day.get("investment_trust_new_buy_signal", pd.Series(0, index=day.index)).fillna(0) >= 1
@@ -607,6 +611,7 @@ def _candidate_ids(daily: pd.DataFrame, main: pd.DataFrame, target_date: str, li
     day["_rank"] = (
         day["_price_weak"].astype(int) * 40
         + day["_main_positive"].astype(int) * 25
+        + day["_main_2d"].astype(int) * 12
         + day["_main_ratio_ok"].astype(int) * 15
         + day["_concentration_ok"].astype(int) * 10
         + day["_trust_new"].astype(int) * 18

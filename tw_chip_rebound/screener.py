@@ -20,6 +20,7 @@ OUTPUT_COLUMNS = [
     "成交量",
     "主力買賣超",
     "主力買超佔成交量比例",
+    "主力連買天數",
     "家數差",
     "5日集中度",
     "20日集中度",
@@ -46,6 +47,7 @@ FLAG_LABELS = {
     "main_buy_positive": "主力買超",
     "main_buy_over_1000": "買超千張",
     "main_buy_ratio_over_5": "買超佔比>5%",
+    "main_buy_2d": "連2日買超",
     "count_diff_negative": "家數集中",
     "concentration_5d_stronger": "5日集中轉強",
     "top15_cost_above_close": "主力成本高於收盤",
@@ -178,6 +180,9 @@ def merge_inputs(
         .sum()
         .reset_index(level=0, drop=True)
     )
+    buy_flag = (df["main_buy_sell"] > 0).astype(int)
+    streak_group = buy_flag.eq(0).groupby(df["stock_id"]).cumsum()
+    df["main_buy_streak"] = buy_flag.groupby([df["stock_id"], streak_group]).cumsum()
     return df
 
 
@@ -227,6 +232,8 @@ def chip_strong_conditions(row: pd.Series, config: ScreenConfig = ScreenConfig()
         "main_buy_over_1000": bool(row["main_buy_sell"] >= config.min_main_buy),
         # 主力買超佔成交量至少 5%，代表買盤對當日成交有影響力。
         "main_buy_ratio_over_5": bool(_value(row, "main_volume_ratio") >= config.min_main_volume_ratio),
+        # 主力連續買超 2 天以上，代表不是單日偶發買盤。
+        "main_buy_2d": bool(_value(row, "main_buy_streak", 0) >= 2),
         # 家數差小於 0，表示買方家數少於賣方家數，買盤較集中。
         "count_diff_negative": bool(row["count_diff"] < 0),
         # 5 日集中度由負轉正或高於前一天，代表短期籌碼集中度轉強。
@@ -336,6 +343,7 @@ def score_stock(row: pd.Series, config: ScreenConfig = ScreenConfig()) -> tuple[
     score += 10 if price["black_k"] or price["intraday_spike_faded"] else 0
     score += 10 if price["break_short_ma"] else 0
     score += 15 if chip["main_buy_positive"] else 0
+    score += 6 if chip["main_buy_2d"] else 0
     score += 10 if chip["main_buy_ratio_over_5"] else 0
     score += 10 if chip["count_diff_negative"] else 0
     score += 10 if chip["concentration_5d_stronger"] else 0
@@ -434,6 +442,7 @@ def _format_output_row(row: pd.Series, score: int, flags: dict[str, bool]) -> di
         "成交量": _safe_int(row["volume"]),
         "主力買賣超": _safe_int(row["main_buy_sell"]),
         "主力買超佔成交量比例": _safe_round(_value(row, "main_volume_ratio"), 4),
+        "主力連買天數": _safe_int(row.get("main_buy_streak", float("nan"))),
         "家數差": _safe_int(row["count_diff"]),
         "5日集中度": _safe_round(row["concentration_5d"], 4),
         "20日集中度": _safe_round(row.get("concentration_20d", 0), 4),

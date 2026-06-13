@@ -382,7 +382,7 @@
   <script>
     const cols = [
       "股票代號", "股票名稱", "收盤價", "今日漲跌幅", "最高價", "成交量", "主力買賣超",
-      "主力買超佔成交量比例", "家數差", "5日集中度", "20日集中度", "Top15淨買佔量", "買方Top15均價",
+      "主力買超佔成交量比例", "主力連買天數", "家數差", "5日集中度", "20日集中度", "Top15淨買佔量", "買方Top15均價",
       "收盤價與主力均價差距", "分數", "訊號分類", "觀察理由", "未通過條件", "風險提醒"
     ];
     let rows = [];
@@ -465,7 +465,7 @@
               <div class="fact"><span>成交量</span><b>${row["成交量"]}</b></div>
               <div class="fact"><span>主力買超</span><b>${row["主力買賣超"]}</b></div>
               <div class="fact"><span>買超佔比</span><b>${formatPct(Number(row["主力買超佔成交量比例"]) * 100)}</b></div>
-              <div class="fact"><span>家數差</span><b>${row["家數差"]}</b></div>
+              <div class="fact"><span>連買天數</span><b>${row["主力連買天數"] ?? "-"}</b></div>
               <div class="fact"><span>Top15 淨買</span><b>${formatPct(Number(row["Top15淨買佔量"]) * 100)}</b></div>
             </div>
             <div class="msg">理由：${row["觀察理由"] || "分數排序觀察"}${row["未通過條件"] ? `｜未滿足：${row["未通過條件"]}` : ""}</div>
