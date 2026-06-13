@@ -348,6 +348,13 @@ def _fetch_twse_institutional_one(day: date) -> pd.DataFrame:
         stock_id = str(row[idx["證券代號"]]).strip()
         if not re.fullmatch(r"\d{4}", stock_id):
             continue
+        required_positions = [
+            idx.get(name)
+            for name in (foreign_field, foreign_dealer_field, trust_field, total_field)
+            if name in idx
+        ]
+        if required_positions and max(required_positions) >= len(row):
+            continue
         foreign = _to_number(row[idx[foreign_field]]) if foreign_field in idx else 0
         foreign_dealer = _to_number(row[idx[foreign_dealer_field]]) if foreign_dealer_field in idx else 0
         records.append(
